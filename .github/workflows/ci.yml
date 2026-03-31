@@ -95,7 +95,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
             -DGODOTCPP_TARGET=${{ matrix.target-type }} `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DVCPKG_MANIFEST_MODE=OFF
 
       # ── Build ────────────────────────────────────────────────────────────────
       - name: Build
