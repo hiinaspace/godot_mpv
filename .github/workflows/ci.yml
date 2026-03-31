@@ -125,4 +125,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: godot_mpv-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.target-type }}
-          path: godot_project/bin/${{ matrix.platform }}/
+          path: godot_project/bin/
