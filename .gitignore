@@ -1,5 +1,5 @@
-godot-cpp-build/
 CMakeFiles/
+engine/
 build/
 build-android/
 bin/
