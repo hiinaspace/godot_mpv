@@ -77,6 +77,11 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
           7z x mpv-dev.7z -o"dependencies/mpv-dev" -y
 
+      - name: List mpv-dev contents (diagnostic)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: Get-ChildItem -Recurse dependencies/mpv-dev | Select-Object FullName | Out-String
+
       # ── CMake configure ──────────────────────────────────────────────────────
       - name: Configure (Linux)
         if: matrix.platform == 'linux'
