@@ -43,25 +43,22 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libmpv-dev
+          sudo apt-get install -y cmake ninja-build libmpv-dev libegl-dev libgles2-mesa-dev
 
       # ── Windows ─────────────────────────────────────────────────────────────
-      - name: Bootstrap vcpkg (Windows)
-        if: matrix.platform == 'windows'
-        run: vcpkg/bootstrap-vcpkg.bat -disableMetrics
-        shell: cmd
-
+      # Use the vcpkg pre-installed on the runner (VCPKG_INSTALLATION_ROOT) instead
+      # of bootstrapping the submodule — avoids PATH collision with the runner's vcpkg binary.
       - name: Cache vcpkg packages (Windows)
         if: matrix.platform == 'windows'
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
           key: vcpkg-windows-x86_64-${{ hashFiles('vcpkg.json') }}
 
       - name: Install vcpkg packages (Windows)
         if: matrix.platform == 'windows'
-        run: vcpkg/vcpkg install --triplet x64-windows
-        shell: cmd
+        shell: pwsh
+        run: vcpkg install --triplet x64-windows --vcpkg-root $env:VCPKG_INSTALLATION_ROOT
 
       - name: Cache libmpv dev package (Windows)
         if: matrix.platform == 'windows'
@@ -97,7 +94,7 @@ jobs:
             -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
             -DGODOTCPP_TARGET=${{ matrix.target-type }} `
-            -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows
 
       # ── Build ────────────────────────────────────────────────────────────────
@@ -114,7 +111,7 @@ jobs:
           # libmpv runtime DLL
           Copy-Item "dependencies/mpv-dev/libmpv-2.dll" $outdir -ErrorAction SilentlyContinue
           # ANGLE runtime DLLs (from vcpkg)
-          Get-ChildItem "vcpkg_installed/x64-windows/bin" -Filter "*.dll" |
+          Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin" -Filter "*.dll" |
             Where-Object { $_.Name -in @("libEGL.dll", "libGLESv2.dll") } |
             Copy-Item -Destination $outdir
 
