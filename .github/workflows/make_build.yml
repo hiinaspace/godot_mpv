@@ -1,0 +1,142 @@
+name: Build All Targets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.platform }} ${{ matrix.arch }} ${{ matrix.target-type }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, windows]
+        arch: [x86_64]
+        target-type: [template_debug, template_release]
+        include:
+          - platform: linux
+            os: ubuntu-22.04
+          - platform: windows
+            os: windows-latest
+          - target-type: template_debug
+            cmake-build-type: Debug
+          - target-type: template_release
+            cmake-build-type: Release
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      MPV_RELEASE_TAG: "20260331"
+      MPV_GIT_HASH: "9465b30"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ── Linux ───────────────────────────────────────────────────────────────
+      - name: Install dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libmpv-dev
+
+      # ── Windows ─────────────────────────────────────────────────────────────
+      - name: Bootstrap vcpkg (Windows)
+        if: matrix.platform == 'windows'
+        run: vcpkg/bootstrap-vcpkg.bat -disableMetrics
+        shell: cmd
+
+      - name: Cache vcpkg packages (Windows)
+        if: matrix.platform == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: vcpkg_installed
+          key: vcpkg-windows-x86_64-${{ hashFiles('vcpkg.json') }}
+
+      - name: Install vcpkg packages (Windows)
+        if: matrix.platform == 'windows'
+        run: vcpkg/vcpkg install --triplet x64-windows
+        shell: cmd
+
+      - name: Cache libmpv dev package (Windows)
+        if: matrix.platform == 'windows'
+        id: cache-mpv
+        uses: actions/cache@v4
+        with:
+          path: dependencies/mpv-dev
+          key: mpv-dev-windows-x86_64-${{ env.MPV_RELEASE_TAG }}-${{ env.MPV_GIT_HASH }}
+
+      - name: Download libmpv (Windows, cache miss)
+        if: matrix.platform == 'windows' && steps.cache-mpv.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $filename = "mpv-dev-x86_64-${{ env.MPV_RELEASE_TAG }}-git-${{ env.MPV_GIT_HASH }}.7z"
+          $url = "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/${{ env.MPV_RELEASE_TAG }}/$filename"
+          Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          7z x mpv-dev.7z -o"dependencies/mpv-dev" -y
+
+      # ── CMake configure ──────────────────────────────────────────────────────
+      - name: Configure (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} \
+            -DGODOTCPP_TARGET=${{ matrix.target-type }}
+
+      - name: Configure (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
+            -DGODOTCPP_TARGET=${{ matrix.target-type }} `
+            -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      # ── Build ────────────────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build build --parallel
+
+      # ── Collect runtime dependencies (Windows) ───────────────────────────────
+      - name: Copy Windows runtime DLLs
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $outdir = "godot_project/bin/windows"
+          New-Item -ItemType Directory -Force -Path $outdir | Out-Null
+          Copy-Item "dependencies/mpv-dev/libmpv-2.dll" $outdir -ErrorAction SilentlyContinue
+          Get-ChildItem "vcpkg_installed/x64-windows/bin" -Filter "*.dll" |
+            Where-Object { $_.Name -in @("libEGL.dll", "libGLESv2.dll") } |
+            Copy-Item -Destination $outdir
+
+      # ── Upload per-build artifact ────────────────────────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot_mpv-${{ matrix.platform }}-${{ matrix.arch }}-${{ matrix.target-type }}
+          path: godot_project/bin/${{ matrix.platform }}/
+
+  # Merge all platform artifacts into one release artifact
+  merge:
+    name: Merge artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for gdextension file)
+        uses: actions/checkout@v4
+
+      - name: Merge build artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: godot_mpv
+          pattern: godot_mpv-*
+          delete-merged: true
+
+      - name: Upload gdextension file
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot_mpv-gdextension
+          path: godot_project/bin/godot_mpv.gdextension
