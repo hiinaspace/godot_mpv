@@ -81,10 +81,12 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          Write-Host "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT"
+          Write-Host "=== installed/ top-level ===" ; Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed" -ErrorAction SilentlyContinue | Select-Object Name
           $p = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
-          Write-Host "=== lib/ ===" ; Get-ChildItem "$p/lib" | Select-Object Name
-          Write-Host "=== bin/ ===" ; Get-ChildItem "$p/bin" | Select-Object Name
-          Write-Host "=== include/EGL/ ===" ; Get-ChildItem "$p/include/EGL" -ErrorAction SilentlyContinue | Select-Object Name
+          Write-Host "=== lib/ ===" ; Get-ChildItem "$p/lib" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "EGL|GLES|angle|ANGLE" } | Select-Object Name
+          Write-Host "=== bin/ ===" ; Get-ChildItem "$p/bin" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "EGL|GLES|angle|ANGLE" } | Select-Object Name
+          Write-Host "=== share/angle ===" ; Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/share/angle" -ErrorAction SilentlyContinue | Select-Object Name
 
       # ── CMake configure ──────────────────────────────────────────────────────
       - name: Configure (Linux)
