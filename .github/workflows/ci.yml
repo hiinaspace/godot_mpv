@@ -77,6 +77,15 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
           7z x mpv-dev.7z -o"dependencies/mpv-dev" -y
 
+      - name: List ANGLE vcpkg files (diagnostic)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $p = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
+          Write-Host "=== lib/ ===" ; Get-ChildItem "$p/lib" | Select-Object Name
+          Write-Host "=== bin/ ===" ; Get-ChildItem "$p/bin" | Select-Object Name
+          Write-Host "=== include/EGL/ ===" ; Get-ChildItem "$p/include/EGL" -ErrorAction SilentlyContinue | Select-Object Name
+
       # ── CMake configure ──────────────────────────────────────────────────────
       - name: Configure (Linux)
         if: matrix.platform == 'linux'
