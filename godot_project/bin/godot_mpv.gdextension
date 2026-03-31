@@ -1,0 +1,10 @@
+[configuration]
+compatibility_minimum = "4.4"
+entry_symbol = "godot_mpv_library_init"
+reloadable = false
+
+[libraries]
+linux.x86_64.single.debug   = "./linux/godot_mpv.linux.template_debug.x86_64.so"
+linux.x86_64.single.release = "./linux/godot_mpv.linux.template_release.x86_64.so"
+windows.x86_64.single.debug   = "./windows/godot_mpv.windows.template_debug.x86_64.dll"
+windows.x86_64.single.release = "./windows/godot_mpv.windows.template_release.x86_64.dll"

@@ -2,8 +2,13 @@ CMakeFiles/
 engine/
 build/
 build-android/
-bin/
+# Only exclude root-level bin/ (SCons output); godot_project/bin/ is the asset dir
+/bin/
 vcpkg_installed/
+# Compiled extension libraries are build output — not tracked
+godot_project/bin/**/*.so
+godot_project/bin/**/*.dll
+godot_project/bin/**/*.dylib
 x64/
 cmake_install.cmake
 CMakeCache.txt
