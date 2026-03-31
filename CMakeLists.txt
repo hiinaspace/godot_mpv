@@ -85,13 +85,20 @@ target_include_directories(godot_mpv PRIVATE
 
 # Platform-specific libmpv linkage
 if(WIN32)
+    # ANGLE EGL/GLESv2 — use find_library so vcpkg toolchain is not needed.
+    # Pass -DCMAKE_INCLUDE_PATH and -DCMAKE_LIBRARY_PATH pointing at the vcpkg
+    # installed directory (e.g. $VCPKG_INSTALLATION_ROOT/installed/x64-windows).
+    find_library(EGL_LIB NAMES libEGL.dll.lib libEGL.dll.a EGL REQUIRED)
+    find_library(GLESV2_LIB NAMES libGLESv2.dll.lib libGLESv2.dll.a GLESv2 REQUIRED)
+    find_path(ANGLE_INCLUDE_DIR NAMES EGL/egl.h REQUIRED)
     target_link_libraries(godot_mpv PRIVATE
         "${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/libmpv.dll.a"
-        EGL
-        GLESv2
+        ${EGL_LIB}
+        ${GLESV2_LIB}
     )
     target_include_directories(godot_mpv PRIVATE
         "${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include"
+        ${ANGLE_INCLUDE_DIR}
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     link_directories(${CMAKE_SOURCE_DIR}/dependencies/aarch64/mpv)

@@ -77,11 +77,6 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
           7z x mpv-dev.7z -o"dependencies/mpv-dev" -y
 
-      - name: List mpv-dev contents (diagnostic)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: Get-ChildItem -Recurse dependencies/mpv-dev | Select-Object FullName | Out-String
-
       # ── CMake configure ──────────────────────────────────────────────────────
       - name: Configure (Linux)
         if: matrix.platform == 'linux'
@@ -95,13 +90,16 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          # Point CMake's find_library/find_path at the vcpkg installed tree.
+          # Do NOT pass the vcpkg toolchain file — it wraps all find_package calls
+          # and causes infinite recursion with godot-cpp's subproject configure.
+          $vcpkg_prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
           cmake -S . -B build `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
             -DGODOTCPP_TARGET=${{ matrix.target-type }} `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_MANIFEST_MODE=OFF
+            -DCMAKE_INCLUDE_PATH="$vcpkg_prefix/include" `
+            -DCMAKE_LIBRARY_PATH="$vcpkg_prefix/lib"
 
       # ── Build ────────────────────────────────────────────────────────────────
       - name: Build
@@ -118,7 +116,7 @@ jobs:
           Copy-Item "dependencies/mpv-dev/libmpv-2.dll" $outdir -ErrorAction SilentlyContinue
           # ANGLE runtime DLLs (from vcpkg)
           Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin" -Filter "*.dll" |
-            Where-Object { $_.Name -in @("libEGL.dll", "libGLESv2.dll") } |
+            Where-Object { $_.Name -match "libEGL|libGLESv2" } |
             Copy-Item -Destination $outdir
 
       # ── Upload artifact ──────────────────────────────────────────────────────

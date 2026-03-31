@@ -84,13 +84,13 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
+          $vcpkg_prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
           cmake -S . -B build `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
             -DGODOTCPP_TARGET=${{ matrix.target-type }} `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DVCPKG_MANIFEST_MODE=OFF
+            -DCMAKE_INCLUDE_PATH="$vcpkg_prefix/include" `
+            -DCMAKE_LIBRARY_PATH="$vcpkg_prefix/lib"
 
       # ── Build ────────────────────────────────────────────────────────────────
       - name: Build
@@ -105,7 +105,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $outdir | Out-Null
           Copy-Item "dependencies/mpv-dev/libmpv-2.dll" $outdir -ErrorAction SilentlyContinue
           Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin" -Filter "*.dll" |
-            Where-Object { $_.Name -in @("libEGL.dll", "libGLESv2.dll") } |
+            Where-Object { $_.Name -match "libEGL|libGLESv2" } |
             Copy-Item -Destination $outdir
 
       # ── Upload per-build artifact ────────────────────────────────────────────
