@@ -85,9 +85,8 @@ target_include_directories(godot_mpv PRIVATE
 
 # Platform-specific libmpv linkage
 if(WIN32)
-    # ANGLE EGL/GLESv2 — use find_library so vcpkg toolchain is not needed.
-    # Pass -DCMAKE_INCLUDE_PATH and -DCMAKE_LIBRARY_PATH pointing at the vcpkg
-    # installed directory (e.g. $VCPKG_INSTALLATION_ROOT/installed/x64-windows).
+    # ANGLE EGL/GLESv2 from MSYS2 UCRT64 (mingw-w64-ucrt-x86_64-angleproject).
+    # Pass -DCMAKE_PREFIX_PATH="/ucrt64" when building inside the MSYS2 UCRT64 shell.
     find_library(EGL_LIB NAMES libEGL.dll.lib libEGL.dll.a EGL REQUIRED)
     find_library(GLESV2_LIB NAMES libGLESv2.dll.lib libGLESv2.dll.a GLESv2 REQUIRED)
     find_path(ANGLE_INCLUDE_DIR NAMES EGL/egl.h REQUIRED)

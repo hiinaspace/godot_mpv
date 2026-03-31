@@ -16,7 +16,7 @@ jobs:
           - platform: linux
             os: ubuntu-22.04
           - platform: windows
-            os: windows-latest
+            os: windows-2022
           - target-type: template_debug
             cmake-build-type: Debug
           - target-type: template_release
@@ -41,18 +41,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libmpv-dev libegl-dev libgles2-mesa-dev
 
-      # ── Windows ─────────────────────────────────────────────────────────────
-      - name: Cache vcpkg packages (Windows)
+      # ── Windows — MSYS2 UCRT64 ──────────────────────────────────────────────
+      - name: Setup MSYS2 with ANGLE (Windows)
         if: matrix.platform == 'windows'
-        uses: actions/cache@v4
+        uses: msys2/setup-msys2@v2
         with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
-          key: vcpkg-windows-x86_64-${{ hashFiles('vcpkg.json') }}
-
-      - name: Install vcpkg packages (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: vcpkg install --triplet x64-windows --vcpkg-root $env:VCPKG_INSTALLATION_ROOT
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-angleproject
 
       - name: Cache libmpv dev package (Windows)
         if: matrix.platform == 'windows'
@@ -82,31 +82,33 @@ jobs:
 
       - name: Configure (Windows)
         if: matrix.platform == 'windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $vcpkg_prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows"
-          cmake -S . -B build `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} `
-            -DGODOTCPP_TARGET=${{ matrix.target-type }} `
-            -DCMAKE_INCLUDE_PATH="$vcpkg_prefix/include" `
-            -DCMAKE_LIBRARY_PATH="$vcpkg_prefix/lib"
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.cmake-build-type }} \
+            -DGODOTCPP_TARGET=${{ matrix.target-type }} \
+            -DCMAKE_PREFIX_PATH="/ucrt64"
 
       # ── Build ────────────────────────────────────────────────────────────────
-      - name: Build
+      - name: Build (Linux)
+        if: matrix.platform == 'linux'
+        run: cmake --build build --parallel
+
+      - name: Build (Windows)
+        if: matrix.platform == 'windows'
+        shell: msys2 {0}
         run: cmake --build build --parallel
 
       # ── Collect runtime dependencies (Windows) ───────────────────────────────
       - name: Copy Windows runtime DLLs
         if: matrix.platform == 'windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          $outdir = "godot_project/bin/windows"
-          New-Item -ItemType Directory -Force -Path $outdir | Out-Null
-          Copy-Item "dependencies/mpv-dev/libmpv-2.dll" $outdir -ErrorAction SilentlyContinue
-          Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin" -Filter "*.dll" |
-            Where-Object { $_.Name -match "libEGL|libGLESv2" } |
-            Copy-Item -Destination $outdir
+          outdir="godot_project/bin/windows"
+          mkdir -p "$outdir"
+          cp dependencies/mpv-dev/libmpv-2.dll "$outdir/" || true
+          cp /ucrt64/bin/libEGL.dll /ucrt64/bin/libGLESv2.dll "$outdir/"
 
       # ── Upload per-build artifact ────────────────────────────────────────────
       - name: Upload artifact
