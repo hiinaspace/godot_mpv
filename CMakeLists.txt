@@ -1,23 +1,32 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.17)
+
+# Make sure all the dependencies are satisfied
+find_package(Python3 3.4 REQUIRED)
+find_program(GIT git REQUIRED)
+
+# Ensure godot-cpp submodule has been initialized
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/godot-cpp/src")
+    message(NOTICE "godot-cpp bindings source not found")
+    message(NOTICE "initializing/updating the godot-cpp submodule...")
+    execute_process(
+        COMMAND git submodule update --init godot-cpp
+        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+endif()
+add_subdirectory(godot-cpp SYSTEM)
+
+# Add godot-cpp's module path and include the exported functions
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${godot-cpp_SOURCE_DIR}/cmake")
+include(GodotCPPModule)
+
+# Retrieve platform and suffix info from godot-cpp target
+get_target_property(GODOTCPP_SUFFIX godot::cpp GODOTCPP_SUFFIX)
+get_target_property(GODOTCPP_PLATFORM godot::cpp GODOTCPP_PLATFORM)
+
 project(godot_mpv)
 
-# Replace with your Godot 4.x install path
-set(GODOT_CPP_PATH "engine/godot-cpp")
-set(PROJECT_NAME godot_mpv)
-
-# Detect platform
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    set(PLATFORM android)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(PLATFORM windows)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(PLATFORM linux)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    set(PLATFORM macos)
-else()
-    message(FATAL_ERROR "Unsupported platform")
-endif()
-
+# GitVersion integration (keep as-is)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 include(GitVersion)
 get_version_from_git()
@@ -26,8 +35,30 @@ configure_file(
     ${CMAKE_CURRENT_BINARY_DIR}/native/src/godot_mpv/include/version.h
 )
 
-# Godot-cpp binding
-add_subdirectory(${GODOT_CPP_PATH} godot-cpp-build)
+# GLAD targets — STATIC on Windows, OBJECT on Linux (embedded into main .so)
+if(WIN32)
+    add_library(glad_gles2 STATIC
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
+    )
+    add_library(glad_egl STATIC
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
+    )
+else()
+    add_library(glad_gles2 OBJECT
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
+    )
+    add_library(glad_egl OBJECT
+        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
+    )
+    set_target_properties(glad_gles2 glad_egl PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
+target_include_directories(glad_gles2 PUBLIC
+    "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+)
+target_include_directories(glad_egl PUBLIC
+    "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
+)
 
 # Source files
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
@@ -35,133 +66,53 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     native/src/godot_mpv/*.h
 )
 
-# Specific libs for EGL and GLES on windows
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+# Main shared library
+add_library(godot_mpv SHARED ${SOURCES})
 
-    add_library(glad_gles2 STATIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
-    )
+target_compile_features(godot_mpv PRIVATE cxx_std_20)
 
-    target_include_directories(glad_gles2 PUBLIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
-    )
+target_link_libraries(godot_mpv PRIVATE
+    godot::cpp
+    glad_gles2
+    glad_egl
+)
 
-    add_library(glad_egl STATIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
-    )
+target_include_directories(godot_mpv PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/dependencies/glad
+    ${CMAKE_CURRENT_BINARY_DIR}/native/src/godot_mpv/include
+)
 
-    target_include_directories(glad_egl PUBLIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
-    )
-
-    add_library(${PROJECT_NAME} SHARED ${SOURCES})
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        godot-cpp
+# Platform-specific libmpv linkage
+if(WIN32)
+    target_link_libraries(godot_mpv PRIVATE
         "${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/libmpv.dll.a"
-        glad_gles2
-        glad_egl
         EGL
         GLESv2
-        )
-
-    # Compiler settings
-    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-    target_include_directories(${PROJECT_NAME} PRIVATE 
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_INSTALL_PREFIX}/include
-        ${CMAKE_SOURCE_DIR}/dependencies/glad
-        ${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include
-        ${GODOT_CPP_PATH}/include
-        src
     )
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-
-    add_library(glad_gles2 SHARED
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
-    )
-
-    target_include_directories(glad_gles2 PUBLIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
-    )
-    
-    add_library(glad_egl SHARED
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
-    )
-
-    target_include_directories(glad_egl PUBLIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
-    )
-
-    add_library(${PROJECT_NAME} SHARED ${SOURCES})
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        godot-cpp
-        glad_gles2
-        glad_egl
-        mpv
-        )
-
-    # Compiler settings
-    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-    target_include_directories(${PROJECT_NAME} PRIVATE 
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/dependencies/glad
-        ${GODOT_CPP_PATH}/include
-        src
+    target_include_directories(godot_mpv PRIVATE
+        "${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include"
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    add_library(glad STATIC
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/egl.c"
-        "${CMAKE_SOURCE_DIR}/dependencies/glad/src/gles2.c"
-    )
-
-    target_include_directories(glad PUBLIC
-    "${CMAKE_SOURCE_DIR}/dependencies/glad/include"
-    )
     link_directories(${CMAKE_SOURCE_DIR}/dependencies/aarch64/mpv)
-
-    add_library(${PROJECT_NAME} SHARED ${SOURCES})
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        godot-cpp
-        glad
-        mpv
-        EGL
-        GLESv3
-        )
-
-    # Compiler settings
-    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
-
-    target_include_directories(${PROJECT_NAME} PRIVATE 
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/dependencies/glad
-        ${CMAKE_SOURCE_DIR}/dependencies/mpv-dev/include
-        ${GODOT_CPP_PATH}/include
-        src
-    )
-endif()
-
-
-
-# Determine architecture
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(ARCH x86_64)
+    target_link_libraries(godot_mpv PRIVATE mpv EGL GLESv3)
 else()
-    set(ARCH x86_32)
+    # Use find_library/find_path to avoid pkg-config transitive dependency issues
+    find_library(MPV_LIBRARY NAMES mpv REQUIRED
+        HINTS /usr/local/lib /usr/local/lib/x86_64-linux-gnu
+              /usr/lib /usr/lib/x86_64-linux-gnu)
+    find_path(MPV_INCLUDE_DIR mpv/client.h REQUIRED
+        HINTS /usr/local/include /usr/include)
+    target_link_libraries(godot_mpv PRIVATE ${MPV_LIBRARY})
+    target_include_directories(godot_mpv PRIVATE ${MPV_INCLUDE_DIR})
 endif()
 
-# Determine build type
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(BUILD_SUFFIX template_debug)
-else()
-    set(BUILD_SUFFIX template_release)
-endif()
-
-# Compose the final output name
-set(OUTPUT_FILENAME "${PROJECT_NAME}.${PLATFORM}.${BUILD_SUFFIX}.${ARCH}")
-
-# Platform-specific settings
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    OUTPUT_NAME ${OUTPUT_FILENAME}
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/godot_project/bin/
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/godot_project/bin/
+# Output naming and placement — matches godot-cpp-template pattern
+set_target_properties(godot_mpv PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "godot_mpv${GODOTCPP_SUFFIX}"
+    # RUNTIME covers Windows DLLs; LIBRARY covers Linux .so
+    # $<1:...> prevents MSVC from inserting Debug/Release subdirs
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${PROJECT_SOURCE_DIR}/godot_project/bin/${GODOTCPP_PLATFORM}>"
+    LIBRARY_OUTPUT_DIRECTORY "$<1:${PROJECT_SOURCE_DIR}/godot_project/bin/${GODOTCPP_PLATFORM}>"
 )
